@@ -1,0 +1,7 @@
+cases:
+  - name: sample-smoke
+    message: How do I improve engineering execution?
+    model_profile: fast
+    top_k: 1
+    expected_keywords:
+      - engineering

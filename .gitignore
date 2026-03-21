@@ -1,0 +1,12 @@
+__pycache__/
+.pytest_cache/
+.venv/
+dist/
+build/
+*.pyc
+.DS_Store
+installed_twins/*
+!installed_twins/.gitkeep
+twins/imported/*
+!twins/imported/.gitkeep
+.env

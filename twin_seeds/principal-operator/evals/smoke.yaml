@@ -1,0 +1,16 @@
+cases:
+  - name: engineering-guidance
+    message: Help me improve engineering execution inside an agent factory.
+    model_profile: fast
+    top_k: 2
+    expected_keywords:
+      - engineering
+      - agent factory
+  - name: operating-principles
+    message: What operating principles should guide this twin?
+    model_profile: fast
+    top_k: 2
+    expected_keywords:
+      - people
+      - process
+      - technology

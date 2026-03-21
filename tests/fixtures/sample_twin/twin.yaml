@@ -1,0 +1,33 @@
+schema_version: "1.0"
+twin_id: sample
+name: Sample Twin
+description: Minimal local fixture twin for runtime and installer tests.
+owner: Agent Factory Test Suite
+tags:
+  - test
+prompt:
+  system_prompt: runtime/system.md
+knowledge:
+  documents:
+    - knowledge/base.md
+model_profiles:
+  fast:
+    provider: stub
+    model: stub-fast
+    timeout_seconds: 5
+default_model_profile: fast
+channels:
+  chat:
+    enabled: true
+    provider: http
+guardrails:
+  autonomy_level: L1
+  correction_required_for_self_modification: true
+  allow_external_side_effects: false
+  human_approval_required_actions: []
+corrections:
+  scopes:
+    - response
+  promote_changes_via_review: true
+evals:
+  smoke_file: evals/smoke.yaml
