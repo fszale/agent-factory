@@ -9,7 +9,7 @@ queue. Ships with a React admin dashboard so operators can actually drive it.
 >
 > Filip Szalewicz uses this stack with manufacturing and engineering clients to
 > turn role specs into governed AI employees in 2–6 weeks.
-> [Book a working session →](https://solidcage.com/book)
+> [Book a working session →](https://crm.solidcage.com/widget/bookings/filip-szalewicz-fractional-cto-calendar-vfs0lblxh)
 
 ---
 
