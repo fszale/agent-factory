@@ -1,204 +1,161 @@
 # agent-factory
 
-`agent-factory` is a config-driven runtime for hosting one or more digital twins as installable packages. The framework is public, neutral, and secret-free. Twins bring their own identity, prompts, knowledge, guardrails, model routing, evals, and channel configuration.
+Governed AI employees, with humans in the loop. A FastAPI + Supabase backend that
+imports digital-twin specs from git, installs them as servable agents, runs them
+through threaded conversations, and gates risky actions through an HITL approval
+queue. Ships with a React admin dashboard so operators can actually drive it.
 
-## What This Repo Contains
+> **Build your own twin factory — [solidcage.com](https://solidcage.com)**
+>
+> Filip Szalewicz uses this stack with manufacturing and engineering clients to
+> turn role specs into governed AI employees in 2–6 weeks.
+> [Book a working session →](https://solidcage.com/book)
 
-- A FastAPI runtime for chat and agent-facing programmatic access
-- An installer for twin packages
-- A twin import path from either a local folder or a git URL
-- Pluggable model providers, including xAI Responses API support
-- A generic principal-operator twin seed configured for `grok-4.20-0309-reasoning`
-- Supabase-backed persistence support for threads, messages, runs, tasks, events, approvals, corrections, and artifact proposals
-- Supabase-backed machine API client management, admin identity mapping, and audit logging
-- A minimal browser chat UI at `/` and an admin governance UI at `/admin`
-- Test coverage for installability, runtime behavior, auth flows, model selection, import flows, and operational APIs
+---
 
-## Project Layout
+## Architecture overview
 
-```text
-agent-factory/
-├── agent_factory/          # Runtime, config, providers, installer, CLI
-├── twin_seeds/             # Small committed seed scaffolds
-├── twins/                  # Optional generated/imported twin packages
-├── installed_twins/        # Runtime installation target
-├── supabase/               # SQL schema for persistence
-├── tests/                  # Contract and smoke-style tests
-├── Dockerfile              # Cloud Run container
-└── .env.example            # Provider secrets contract
+```
+┌──────────────────────┐      ┌────────────────────────────┐
+│   Operator (HITL)    │◀────▶│   Admin Dashboard (React)  │
+└──────────────────────┘      │   solidcage.com / Replit   │
+                              └─────────────┬──────────────┘
+                                            │  REST + X-API-Key
+                                            ▼
+                       ┌────────────────────────────────────┐
+                       │      agent-factory  (FastAPI)      │
+                       │  ┌──────────────────────────────┐  │
+                       │  │ Twin registry / installer    │  │
+                       │  │ Threads + run orchestration  │  │
+                       │  │ HITL approval queue          │  │
+                       │  │ Audit log                    │  │
+                       │  └──────────────────────────────┘  │
+                       └─────────────┬──────────────────────┘
+                                     │
+                  ┌──────────────────┼─────────────────────┐
+                  ▼                  ▼                     ▼
+         ┌──────────────┐  ┌──────────────────┐  ┌─────────────────┐
+         │  Supabase    │  │ Twin git sources │  │ Model providers │
+         │ (state, log) │  │ (spec repos)     │  │ (LLM API)       │
+         └──────────────┘  └──────────────────┘  └─────────────────┘
 ```
 
-## Quick Start
+Three responsibilities:
+
+1. **Lifecycle** — clone a twin spec from git, install dependencies, register
+   it, and toggle it active. See [`.agents/skills/twin-lifecycle`](./.agents/skills/twin-lifecycle/SKILL.md).
+2. **Governance** — every risky tool call surfaces in an approval queue;
+   nothing executes without a human decision. See
+   [`.agents/skills/hitl-governance`](./.agents/skills/hitl-governance/SKILL.md).
+3. **Audit** — append-only log of every twin/run/approval/config event,
+   queryable by twin, action, and date. See
+   [`.agents/skills/audit-review`](./.agents/skills/audit-review/SKILL.md).
+
+---
+
+## Quick start
+
+### Backend
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-
-agent-factory import-kernel \
-  --source ../agent-kernel \
-  --twin-root twins/imported/my-twin \
-  --seed-root twin_seeds/principal-operator \
-  --twin-id my_twin \
-  --name "My Principal Operator Twin" \
-  --owner "Twin Owner" \
-  --description "A principal-operator digital twin for engineering leadership, strategic planning, and agent-factory design." \
-  --overwrite
-agent-factory install twins/imported/my-twin installed_twins --overwrite
-agent-factory list --registry-root installed_twins
-agent-factory serve --registry-root installed_twins --host 0.0.0.0 --port 8080
-python3 -m unittest discover -s tests -v
+git clone https://github.com/fszale/agent-factory
+cd agent-factory
+cp .env.example .env  # set SUPABASE_URL, SUPABASE_KEY, OPENAI_API_KEY, FACTORY_API_KEY
+uv sync               # or: pip install -r requirements.txt
+uv run uvicorn agent_factory.main:app --reload --port 8000
 ```
 
-If you want persistence in Supabase, apply [supabase/schema.sql](./supabase/schema.sql) and set:
+The API is now at `http://localhost:8000`. Health check:
 
 ```bash
-export SUPABASE_URL=...
-export SUPABASE_SERVICE_ROLE_KEY=...
-export SUPABASE_JWT_SECRET=...
-export XAI_API_KEY=...
-export AGENT_FACTORY_REQUIRE_AUTH=true
+curl -H "X-API-Key: $FACTORY_API_KEY" http://localhost:8000/healthz
 ```
 
-## Source Vs Installed Twins
+### Admin dashboard
 
-- `twin_seeds/` is source control. This is where small committed seed scaffolds live.
-- `twins/` is for generated or imported twin packages.
-- `installed_twins/` is generated runtime state. It is filled by the installer and should not be edited by hand.
+Two ways to run the dashboard:
 
-The preferred pattern is:
+**Live deployment** — the dashboard is mounted at `<DEPLOY_URL>/twin-portal/admin` of the
+SolidCage Replit Deployment (replace `<DEPLOY_URL>` with the live `*.replit.app`
+host from the Publishing tool, or the configured custom domain such as
+`apps.solidcage.com`). Open `<DEPLOY_URL>/twin-portal/admin/onboarding` and paste your
+factory base URL + API key.
 
-1. Keep the framework repo clean and public.
-2. Import a kernel from a local folder or a git URL into `twins/imported/<your-twin>`.
-3. Install that generated twin package into `installed_twins/`.
+**Local development** — the dashboard source is mirrored from the Replit
+project under [`./dashboard/`](./dashboard/) for backup and reference. To run
+it standalone, copy it into a Vite project (or read the linked source for the
+full pnpm-monorepo setup).
 
-Examples:
+---
 
-```bash
-agent-factory import-kernel \
-  --source ../agent-kernel \
-  --twin-root twins/imported/my-twin \
-  --seed-root twin_seeds/principal-operator \
-  --twin-id my_twin \
-  --name "My Principal Operator Twin" \
-  --owner "Twin Owner" \
-  --overwrite
+## API surface
+
+| Resource | Method | Path | Notes |
+| --- | --- | --- | --- |
+| Twins | GET | `/twins` | List all installed twins |
+| Twins | GET | `/twins/{id}` | Single twin |
+| Twins | POST | `/twins/import` | `{ source_url, branch?, active? }` |
+| Twins | PATCH | `/twins/{id}/active` | `{ active: bool }` |
+| Twins | POST | `/twins/{id}/serve` | Start serving |
+| Twins | POST | `/twins/{id}/stop` | Stop serving |
+| Threads | GET | `/threads?twin_id=&page=&page_size=` | Paginated |
+| Threads | GET | `/threads/{id}/messages` | Full message history |
+| Approvals | GET | `/approvals?status=&page=&page_size=` | Paginated |
+| Approvals | POST | `/approvals/{id}/accept` | `{ notes? }` |
+| Approvals | POST | `/approvals/{id}/reject` | `{ notes? }` |
+| Audit | GET | `/audit?twin_id=&action=&start=&end=&page=&page_size=` | Paginated |
+| Health | GET | `/healthz` | No auth |
+
+All non-health endpoints require an API key in either the
+`X-API-Key` header or `Authorization: Bearer <key>`. Requests reject `401` when
+the key is missing or unrecognized.
+
+Errors follow FastAPI conventions:
+
+```json
+{ "detail": "Twin 'xyz' not found" }
 ```
 
-```bash
-agent-factory import-kernel \
-  --source https://github.com/fszale/agent-kernel.git \
-  --git-ref main \
-  --twin-root twins/imported/my-twin \
-  --seed-root twin_seeds/principal-operator \
-  --twin-id my_twin \
-  --name "My Principal Operator Twin" \
-  --owner "Twin Owner" \
-  --overwrite
+The dashboard's typed client (`dashboard/src/lib/agent-factory/client.ts`)
+parses these into a `FactoryApiError` with a stable `code` string
+(`unauthorized`, `not_found`, `server_error`, `network_error`, …).
+
+---
+
+## Repo layout
+
+```
+.
+├── README.md                  ← you are here
+├── AGENTS.md                  ← OpenAI / generic agent guidance
+├── CLAUDE.md                  ← Anthropic-specific guidance
+├── CONTEXT.md                 ← deeper architecture & invariants
+├── .agents/
+│   ├── skills/
+│   │   ├── twin-lifecycle/
+│   │   ├── hitl-governance/
+│   │   └── audit-review/
+│   └── workflows/
+│       ├── import-and-deploy-twin.md
+│       └── review-approvals.md
+├── dashboard/                 ← mirror of the React admin app
+└── agent_factory/             ← FastAPI app (this repo's primary code)
 ```
 
-`twins/imported/` is gitignored so imported twins do not need to be committed.
+---
 
-## Runtime Model
+## Related work
 
-Each twin ships a `twin.yaml` manifest with:
+- [`fszale/agent-kernel`](https://github.com/fszale/agent-kernel) — minimal
+  agent runtime used inside twins.
+- [`fszale/digital-twin-filip`](https://github.com/fszale/digital-twin-filip) —
+  reference twin spec.
+- [`fszale/agentic-playbook`](https://github.com/fszale/agentic-playbook) —
+  rollout playbook for organizations.
+- [`solidcage.com`](https://solidcage.com) — consulting front door.
 
-- identity and ownership metadata
-- prompt and knowledge locations
-- model profiles per twin
-- guardrails and correction-policy settings
-- channel provisioning, including future voice/avatar hooks
-- eval suite paths
+---
 
-The runtime loads the installed packages, retrieves relevant knowledge snippets, constructs the system prompt, and routes to the selected provider profile.
+## License
 
-## API Surface
-
-The runtime now exposes:
-
-- `/` minimal browser chat UI
-- `/admin` minimal admin governance UI
-- `/me`
-- `/twins`, `/twins/{id}`, `/twins/{id}/capabilities`
-- `/threads`, `/threads/{id}`, `/threads/{id}/messages`
-- `/runs`, `/runs/{id}`
-- `/tasks`, `/tasks/{id}`
-- `/events`
-- `/approvals`, `/approvals/{id}/resolve`
-- `/corrections`
-- `/artifacts`
-- `/api-clients`
-- `/admin-identities`
-- `/audit`
-- `/admin/overview`
-
-When `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set, these records persist in Supabase. Otherwise the server falls back to an in-memory store for local development and tests.
-
-## Auth Model
-
-`agent-factory` now supports two auth paths:
-
-- Machine callers: hashed API keys stored in `api_clients`
-- Human admins: Supabase Auth bearer tokens verified with `SUPABASE_JWT_SECRET`, then matched against `admin_identities`
-
-The intended pattern is:
-
-- agent/workflow/factory callers use API keys with scoped permissions
-- human operators and governors use Supabase Auth plus admin identity mapping
-
-Common machine scopes:
-
-- `twin:read`
-- `capability:read`
-- `chat:write`
-- `thread:read`
-- `thread:write`
-- `task:create`
-- `task:read`
-- `event:write`
-- `event:read`
-- `run:read`
-
-Common admin scopes:
-
-- `approval:read`
-- `approval:write`
-- `approval:resolve`
-- `correction:read`
-- `correction:write`
-- `artifact:read`
-- `artifact:write`
-- `client:read`
-- `client:write`
-- `admin:read`
-- `admin:write`
-- `audit:read`
-
-Bootstrap note:
-
-- create a Supabase Auth user first
-- insert that user into `admin_identities` in Supabase
-- then use that bearer token to manage API clients and governance state from `/admin`
-
-## Seed Notes
-
-The committed seed is intentionally generic. Personal identity should be injected at import time with `--twin-id`, `--name`, `--owner`, and `--description`, or edited locally after import.
-
-## xAI Notes
-
-The xAI adapter uses the Responses API. You must provide `XAI_API_KEY` in the deployment environment and ensure the configured model is enabled for your xAI account. The principal-operator seed defaults its deep profile to `grok-4.20-0309-reasoning`.
-
-## Cloud Run
-
-This repo includes a `Dockerfile` that runs the API on port `8080`. A typical deployment flow is:
-
-```bash
-docker build -t agent-factory .
-docker run -p 8080:8080 --env-file .env agent-factory
-```
-
-Cloud Run should mount or bake the desired twin packages, then install them into `installed_twins/` during image build or startup.
-
-## Implementation Plan
-
-The phased implementation roadmap is documented in [docs/future-implementation-plan.md](./docs/future-implementation-plan.md). The current recommendation is to finish local Supabase validation first, then move to Cloud Run deployment, and only then start voice and avatar work.
+MIT.
