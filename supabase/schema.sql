@@ -139,6 +139,62 @@ create table if not exists audit_events (
   created_at timestamptz not null default now()
 );
 
+-- Phase 2: improvement-loop tables
+create table if not exists traces (
+  id uuid primary key default gen_random_uuid(),
+  twin_id text not null,
+  task_type text not null,
+  action text not null,
+  outcome text not null,
+  signals jsonb not null default '{}'::jsonb,
+  scores jsonb not null default '{}'::jsonb,
+  run_id uuid null,
+  thread_id uuid null references threads(id) on delete set null,
+  correction_id uuid null references corrections(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists roi_snapshots (
+  id uuid primary key default gen_random_uuid(),
+  twin_id text not null,
+  week_start date not null,
+  primary_metric_value double precision null,
+  baseline_value double precision null,
+  improvement_vs_baseline_pct double precision null,
+  weekly_roi_delta double precision null,
+  usefulness_score double precision null,
+  useful_completion_rate double precision null,
+  curve_classification text null,
+  data_quality_score double precision null,
+  context_notes text null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists improvement_candidates (
+  id uuid primary key default gen_random_uuid(),
+  twin_id text not null,
+  candidate_type text not null,
+  status text not null default 'proposed',
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists improvement_events (
+  id uuid primary key default gen_random_uuid(),
+  twin_id text not null,
+  candidate_id uuid null references improvement_candidates(id) on delete set null,
+  change_type text not null,
+  applied_mode text not null,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_traces_twin_id on traces(twin_id);
+create index if not exists idx_roi_snapshots_twin_id on roi_snapshots(twin_id);
+create index if not exists idx_improvement_candidates_twin_id on improvement_candidates(twin_id);
+create index if not exists idx_improvement_events_twin_id on improvement_events(twin_id);
+
 create index if not exists idx_threads_twin_id on threads(twin_id);
 create index if not exists idx_messages_thread_id on messages(thread_id);
 create index if not exists idx_runs_twin_id on runs(twin_id);

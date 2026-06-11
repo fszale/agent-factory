@@ -10,3 +10,9 @@ installed_twins/*
 twins/imported/*
 !twins/imported/.gitkeep
 .env
+# Twin-builder output artifacts (content-addressed, reproducible)
+twins/artifacts/
+.factory-blobs/
+
+# Improvement-loop dry-run PR artifacts
+.improvements/

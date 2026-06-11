@@ -1,0 +1,73 @@
+# twin.example.yaml — reference implementation of the twin.yaml contract
+# Validates against schemas/twin.schema.json
+# This mirrors digital-twin-filip as the reference bridge.
+
+twin:
+  name: filip
+  description: "Filip's principal-operator twin — fractional CTO, agentic systems advisor."
+  owner: fszale@gmail.com
+
+  kernel:
+    # Each customer owns a separate kernel repo. This is Filip's reference kernel.
+    # For customer twins, replace with the customer's own repo URL.
+    source: github.com/fszale/agent-kernel
+    version: v1.0.0          # PINNED — never a branch; bump explicitly to upgrade
+
+  roles:
+    - principal-operator
+    - fractional-cto
+
+  overrides:
+    prompts: ./overrides/prompts/
+    skills:  ./overrides/skills/
+
+  # Capability → provider routing.
+  # Add/remove capabilities as the twin's scope grows.
+  models:
+    research:
+      provider: openai
+      model: gpt-4o
+      api_key_env: OPENAI_API_KEY
+    social:
+      provider: xai
+      model: grok-3
+      api_key_env: XAI_API_KEY
+    engineering:
+      provider: xai
+      model: grok-3
+      api_key_env: XAI_API_KEY
+    default:
+      provider: xai
+      model: grok-3
+      api_key_env: XAI_API_KEY
+
+  autonomy:
+    mode: propose-then-confirm    # Product default — forced unless full_autonomy.enabled=true
+
+    # These actions never require human approval.
+    auto_allow:
+      - search
+      - read
+      - summarize
+
+    # These actions are ALWAYS routed through the HITL queue, even in full-autonomy mode.
+    always_gate:
+      - send
+      - post
+      - purchase
+      - deploy
+
+    full_autonomy:
+      enabled: false              # Opt-in only. Set true only with a valid guardrails block.
+      guardrails:
+        daily_token_limit: 2000000      # Hard stop; factory kills tasks past this
+        daily_usd_limit: 25.00          # Hard stop across all providers
+        per_task_token_limit: 200000
+        max_actions_per_hour: 60        # Rate cap to catch runaway loops
+        allowed_actions:
+          - search
+          - read
+          - summarize
+          - research
+          - engineer
+        kill_switch: true               # One-click factory-wide pause

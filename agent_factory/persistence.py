@@ -243,6 +243,10 @@ class InMemoryStore(PersistenceStore):
             "api_clients": {},
             "admin_identities": {},
             "audit_events": {},
+            "traces": {},
+            "roi_snapshots": {},
+            "improvement_candidates": {},
+            "improvement_events": {},
         }
 
     def _insert(self, table: str, row: dict[str, Any], row_id: str | None = None) -> dict[str, Any]:
@@ -665,6 +669,99 @@ class InMemoryStore(PersistenceStore):
         if actor_type:
             items = [item for item in items if item["actor_type"] == actor_type]
         return sorted(items, key=lambda item: item["created_at"], reverse=True)[:limit]
+
+    # -- Phase 2: improvement loop tables ---------------------------------- #
+    def create_trace(
+        self,
+        twin_id: str,
+        task_type: str,
+        action: str,
+        outcome: str,
+        signals: dict[str, Any] | None = None,
+        scores: dict[str, Any] | None = None,
+        run_id: str | None = None,
+        thread_id: str | None = None,
+        correction_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self._insert(
+            "traces",
+            {
+                "id": str(uuid4()),
+                "twin_id": twin_id,
+                "task_type": task_type,
+                "action": action,
+                "outcome": outcome,
+                "signals": signals or {},
+                "scores": scores or {},
+                "run_id": run_id,
+                "thread_id": thread_id,
+                "correction_id": correction_id,
+                "created_at": utc_now(),
+            },
+        )
+
+    def list_traces(self, twin_id: str | None = None, since: str | None = None, limit: int = 1000) -> list[dict[str, Any]]:
+        items = self._list("traces")
+        if twin_id:
+            items = [i for i in items if i["twin_id"] == twin_id]
+        if since:
+            items = [i for i in items if i["created_at"] >= since]
+        return sorted(items, key=lambda i: i["created_at"])[:limit]
+
+    def create_roi_snapshot(self, twin_id: str, week_start: str, fields: dict[str, Any]) -> dict[str, Any]:
+        row = {"id": str(uuid4()), "twin_id": twin_id, "week_start": week_start, "created_at": utc_now()}
+        row.update(fields)
+        return self._insert("roi_snapshots", row)
+
+    def list_roi_snapshots(self, twin_id: str | None = None) -> list[dict[str, Any]]:
+        items = self._list("roi_snapshots")
+        if twin_id:
+            items = [i for i in items if i["twin_id"] == twin_id]
+        return sorted(items, key=lambda i: i["week_start"])
+
+    def create_improvement_candidate(self, twin_id: str, candidate_type: str, payload: dict[str, Any], status: str = "proposed") -> dict[str, Any]:
+        timestamp = utc_now()
+        row = {
+            "id": str(uuid4()),
+            "twin_id": twin_id,
+            "candidate_type": candidate_type,
+            "status": status,
+            "payload": payload,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
+        return self._insert("improvement_candidates", row)
+
+    def update_improvement_candidate(self, candidate_id: str, **fields: Any) -> dict[str, Any]:
+        return self._update("improvement_candidates", candidate_id, fields)
+
+    def list_improvement_candidates(self, twin_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+        items = self._list("improvement_candidates")
+        if twin_id:
+            items = [i for i in items if i["twin_id"] == twin_id]
+        if status:
+            items = [i for i in items if i["status"] == status]
+        return sorted(items, key=lambda i: i["created_at"])
+
+    def create_improvement_event(self, twin_id: str, candidate_id: str, change_type: str, applied_mode: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._insert(
+            "improvement_events",
+            {
+                "id": str(uuid4()),
+                "twin_id": twin_id,
+                "candidate_id": candidate_id,
+                "change_type": change_type,
+                "applied_mode": applied_mode,
+                "payload": payload,
+                "created_at": utc_now(),
+            },
+        )
+
+    def list_improvement_events(self, twin_id: str | None = None) -> list[dict[str, Any]]:
+        items = self._list("improvement_events")
+        if twin_id:
+            items = [i for i in items if i["twin_id"] == twin_id]
+        return sorted(items, key=lambda i: i["created_at"])
 
 
 class SupabaseStore(PersistenceStore):
@@ -1110,6 +1207,98 @@ class SupabaseStore(PersistenceStore):
         if actor_type:
             params["actor_type"] = f"eq.{actor_type}"
         return self._list("audit_events", params=params)
+
+    # -- Phase 2: improvement loop tables ---------------------------------- #
+    def create_trace(
+        self,
+        twin_id: str,
+        task_type: str,
+        action: str,
+        outcome: str,
+        signals: dict[str, Any] | None = None,
+        scores: dict[str, Any] | None = None,
+        run_id: str | None = None,
+        thread_id: str | None = None,
+        correction_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self._insert(
+            "traces",
+            {
+                "twin_id": twin_id,
+                "task_type": task_type,
+                "action": action,
+                "outcome": outcome,
+                "signals": signals or {},
+                "scores": scores or {},
+                "run_id": run_id,
+                "thread_id": thread_id,
+                "correction_id": correction_id,
+                "created_at": utc_now(),
+            },
+        )
+
+    def list_traces(self, twin_id: str | None = None, since: str | None = None, limit: int = 1000) -> list[dict[str, Any]]:
+        params = {"select": "*", "order": "created_at.asc", "limit": str(limit)}
+        if twin_id:
+            params["twin_id"] = f"eq.{twin_id}"
+        if since:
+            params["created_at"] = f"gte.{since}"
+        return self._list("traces", params=params)
+
+    def create_roi_snapshot(self, twin_id: str, week_start: str, fields: dict[str, Any]) -> dict[str, Any]:
+        row = {"twin_id": twin_id, "week_start": week_start, "created_at": utc_now()}
+        row.update(fields)
+        return self._insert("roi_snapshots", row)
+
+    def list_roi_snapshots(self, twin_id: str | None = None) -> list[dict[str, Any]]:
+        params = {"select": "*", "order": "week_start.asc"}
+        if twin_id:
+            params["twin_id"] = f"eq.{twin_id}"
+        return self._list("roi_snapshots", params=params)
+
+    def create_improvement_candidate(self, twin_id: str, candidate_type: str, payload: dict[str, Any], status: str = "proposed") -> dict[str, Any]:
+        timestamp = utc_now()
+        return self._insert(
+            "improvement_candidates",
+            {
+                "twin_id": twin_id,
+                "candidate_type": candidate_type,
+                "status": status,
+                "payload": payload,
+                "created_at": timestamp,
+                "updated_at": timestamp,
+            },
+        )
+
+    def update_improvement_candidate(self, candidate_id: str, **fields: Any) -> dict[str, Any]:
+        return self._update("improvement_candidates", {"id": f"eq.{candidate_id}"}, fields)
+
+    def list_improvement_candidates(self, twin_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+        params = {"select": "*", "order": "created_at.asc"}
+        if twin_id:
+            params["twin_id"] = f"eq.{twin_id}"
+        if status:
+            params["status"] = f"eq.{status}"
+        return self._list("improvement_candidates", params=params)
+
+    def create_improvement_event(self, twin_id: str, candidate_id: str, change_type: str, applied_mode: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._insert(
+            "improvement_events",
+            {
+                "twin_id": twin_id,
+                "candidate_id": candidate_id,
+                "change_type": change_type,
+                "applied_mode": applied_mode,
+                "payload": payload,
+                "created_at": utc_now(),
+            },
+        )
+
+    def list_improvement_events(self, twin_id: str | None = None) -> list[dict[str, Any]]:
+        params = {"select": "*", "order": "created_at.asc"}
+        if twin_id:
+            params["twin_id"] = f"eq.{twin_id}"
+        return self._list("improvement_events", params=params)
 
 
 def build_store_from_env() -> PersistenceStore:

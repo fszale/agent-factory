@@ -7,6 +7,10 @@ from pathlib import Path
 import uvicorn
 
 from agent_factory.app import create_app
+from agent_factory.builder import build_twin
+from agent_factory.deploy import deploy_twin
+from agent_factory.improvement import DryRunPRPublisher, reflect_and_propose
+from agent_factory.persistence import build_store_from_env
 from agent_factory.installer import install_twin
 from agent_factory.kernel_sync import compose_twin_from_kernel_source, sync_kernel_artifacts
 from agent_factory.registry import TwinRegistry
@@ -54,6 +58,28 @@ def _build_parser() -> argparse.ArgumentParser:
     import_parser.add_argument("--name")
     import_parser.add_argument("--owner")
     import_parser.add_argument("--description")
+
+    twin_parser = subparsers.add_parser("twin", help="Twin-builder pipeline (build/deploy)")
+    twin_sub = twin_parser.add_subparsers(dest="twin_command", required=True)
+
+    build_parser = twin_sub.add_parser("build", help="Build an immutable twin artifact from a bridge twin.yaml")
+    build_parser.add_argument("twin_yaml")
+    build_parser.add_argument("--output-root", default="twins/artifacts")
+    build_parser.add_argument("--auth-token", help="Token for private kernel repo auth (or set KERNEL_AUTH_TOKEN)")
+    build_parser.add_argument("--overwrite", action="store_true")
+
+    deploy_parser = twin_sub.add_parser("deploy", help="Deploy a built artifact to a cloud target")
+    deploy_parser.add_argument("artifact_dir")
+    deploy_parser.add_argument("--cloud", required=True, choices=["gcp", "aws", "local"])
+    deploy_parser.add_argument("--registry-root", help="Install the artifact into this registry root")
+
+    reflect_parser = subparsers.add_parser(
+        "reflect",
+        help="Run the improvement loop: score recent traces and propose kernel edits (dry-run PRs)",
+    )
+    reflect_parser.add_argument("--registry-root", required=True)
+    reflect_parser.add_argument("--twin-id", required=True)
+    reflect_parser.add_argument("--output-dir", default=None, help="Where to write dry-run PR artifacts")
 
     return parser
 
@@ -121,6 +147,68 @@ def main() -> None:
             },
         )
         print(json.dumps({"copied": copied, "twin_root": str(Path(args.twin_root).resolve())}, indent=2))
+        return
+
+    if args.command == "twin":
+        if args.twin_command == "build":
+            result = build_twin(
+                twin_yaml=args.twin_yaml,
+                output_root=args.output_root,
+                auth_token=args.auth_token,
+                overwrite=args.overwrite,
+            )
+            print(
+                json.dumps(
+                    {
+                        "twin_name": result.twin_name,
+                        "artifact_hash": result.artifact_hash,
+                        "artifact_dir": str(result.artifact_dir),
+                        "kernel": {"source": result.kernel_source, "version": result.kernel_version},
+                        "files": result.files,
+                    },
+                    indent=2,
+                )
+            )
+            return
+
+        if args.twin_command == "deploy":
+            result = deploy_twin(
+                artifact_dir=args.artifact_dir,
+                cloud=args.cloud,
+                registry_root=args.registry_root,
+            )
+            print(
+                json.dumps(
+                    {
+                        "twin_name": result.twin_name,
+                        "artifact_hash": result.artifact_hash,
+                        "cloud": result.cloud,
+                        "blob_uri": result.blob_uri,
+                        "registry_path": result.registry_path,
+                        "deploy_record": result.deploy_record_path,
+                    },
+                    indent=2,
+                )
+            )
+            return
+
+    if args.command == "reflect":
+        registry = TwinRegistry(args.registry_root)
+        twin = registry.get(args.twin_id)
+        store = build_store_from_env()
+        output_dir = args.output_dir or str(Path(args.registry_root) / ".improvements")
+        result = reflect_and_propose(twin, store, DryRunPRPublisher(output_dir))
+        print(
+            json.dumps(
+                {
+                    "twin_id": result.twin_id,
+                    "scored_traces": result.scored_traces,
+                    "candidates": len(result.candidates),
+                    "published": result.published,
+                },
+                indent=2,
+            )
+        )
         return
 
 

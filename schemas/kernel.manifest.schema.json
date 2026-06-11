@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/fszale/agent-factory/schemas/kernel.manifest.schema.json",
+  "title": "KernelManifest",
+  "description": "kernel.manifest.json — lives at the root of each kernel repo. Describes the versioned contents the twin-builder resolves when it fetches a pinned kernel release.",
+  "type": "object",
+  "required": ["kernel"],
+  "additionalProperties": false,
+  "properties": {
+    "kernel": {
+      "type": "object",
+      "required": ["name", "version", "skills", "prompts"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Kernel identifier, matching the repo name (e.g. agent-kernel).",
+          "pattern": "^[a-z0-9_-]+$"
+        },
+        "version": {
+          "type": "string",
+          "description": "SemVer version string matching the git tag for this release.",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable summary of what this kernel contains."
+        },
+        "owner": {
+          "type": "string",
+          "description": "Email or GitHub handle of the kernel's owner."
+        },
+        "skills": {
+          "type": "array",
+          "description": "All skills exported by this kernel. The builder resolves these by path.",
+          "items": {
+            "type": "object",
+            "required": ["id", "version", "path"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique skill identifier (kebab-case).",
+                "pattern": "^[a-z0-9_-]+$"
+              },
+              "version": {
+                "type": "string",
+                "description": "Skill-level semver. Incremented when skill content changes.",
+                "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+              },
+              "path": {
+                "type": "string",
+                "description": "Relative path from kernel root to skill directory (contains SKILL.md)."
+              },
+              "description": {
+                "type": "string",
+                "description": "One-line summary of what this skill does."
+              },
+              "tags": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Optional categorization tags."
+              }
+            }
+          }
+        },
+        "prompts": {
+          "type": "array",
+          "description": "All prompt templates exported by this kernel.",
+          "items": {
+            "type": "object",
+            "required": ["id", "version", "path"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique prompt identifier (kebab-case).",
+                "pattern": "^[a-z0-9_-]+$"
+              },
+              "version": {
+                "type": "string",
+                "description": "Prompt-level semver.",
+                "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+              },
+              "path": {
+                "type": "string",
+                "description": "Relative path from kernel root to the prompt file."
+              },
+              "description": {
+                "type": "string",
+                "description": "One-line summary of when to use this prompt."
+              },
+              "tags": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        },
+        "templates": {
+          "type": "array",
+          "description": "Optional document/config templates exported by this kernel.",
+          "items": {
+            "type": "object",
+            "required": ["id", "version", "path"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9_-]+$"
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+              },
+              "path": { "type": "string" },
+              "description": { "type": "string" },
+              "tags": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        },
+        "changelog": {
+          "type": "string",
+          "description": "Optional brief changelog for this version (what changed since the last tag)."
+        }
+      }
+    }
+  }
+}

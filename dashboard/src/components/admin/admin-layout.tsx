@@ -48,7 +48,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
               <Link href="/" data-testid="admin-link-portal">portal</Link>
             </Button>
             <Button asChild variant="default" size="sm" className="font-mono">
-              <a href="https://crm.solidcage.com/widget/bookings/filip-szalewicz-fractional-cto-calendar-vfs0lblxh" target="_blank" rel="noreferrer">
+              <a href="https://cal.com/filip-szalewicz-wl6x3a/30min" target="_blank" rel="noreferrer">
                 Book Session
               </a>
             </Button>
@@ -102,7 +102,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             <a href="https://github.com/fszale/agent-factory" target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary transition-colors">
               source
             </a>
-            <a href="https://crm.solidcage.com/widget/bookings/filip-szalewicz-fractional-cto-calendar-vfs0lblxh" target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary transition-colors">
+            <a href="https://cal.com/filip-szalewicz-wl6x3a/30min" target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary transition-colors">
               book
             </a>
           </div>

@@ -18,12 +18,24 @@ class GenerationRequest:
 
 
 @dataclass(slots=True)
+class TokenUsage:
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+    @classmethod
+    def from_total(cls, total: int) -> "TokenUsage":
+        return cls(prompt_tokens=0, completion_tokens=0, total_tokens=total)
+
+
+@dataclass(slots=True)
 class GenerationResponse:
     text: str
     provider: str
     model: str
     raw: dict[str, Any] | None = None
     response_id: str | None = None
+    usage: TokenUsage = field(default_factory=TokenUsage)
 
 
 class ModelProvider(ABC):

@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/fszale/agent-factory/schemas/twin.schema.json",
+  "title": "TwinConfig",
+  "description": "Schema for twin.yaml — the contract between a bridge repo and agent-factory.",
+  "type": "object",
+  "required": ["twin"],
+  "additionalProperties": false,
+  "properties": {
+    "twin": {
+      "type": "object",
+      "required": ["name", "kernel", "roles", "models", "autonomy"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Short identifier for this twin (lowercase, no spaces).",
+          "pattern": "^[a-z0-9_-]+$"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable summary of what this twin does."
+        },
+        "owner": {
+          "type": "string",
+          "description": "Email or GitHub handle of the twin's owner."
+        },
+        "kernel": {
+          "type": "object",
+          "description": "Pinned kernel reference. source is required and must be a full repo URL.",
+          "required": ["source", "version"],
+          "additionalProperties": false,
+          "properties": {
+            "source": {
+              "type": "string",
+              "description": "Full git repo URL for this twin's kernel (may differ per customer). E.g. github.com/fszale/agent-kernel",
+              "pattern": "^[a-zA-Z0-9._/-]+(:[a-zA-Z0-9._/-]+)?$"
+            },
+            "version": {
+              "type": "string",
+              "description": "Pinned git tag. Never 'latest' or a branch name.",
+              "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+            }
+          }
+        },
+        "roles": {
+          "type": "array",
+          "description": "Role identifiers this twin plays (e.g. principal-operator, fractional-cto).",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "overrides": {
+          "type": "object",
+          "description": "Optional bridge-level overrides layered on top of the resolved kernel.",
+          "additionalProperties": false,
+          "properties": {
+            "prompts": { "type": "string", "description": "Relative path to prompt overrides dir." },
+            "skills":  { "type": "string", "description": "Relative path to skill overrides dir." }
+          }
+        },
+        "models": {
+          "type": "object",
+          "description": "Capability → provider+model routing. Keys are capability names (research, social, engineering, etc.).",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "required": ["provider", "model"],
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "type": "string",
+                "description": "Provider key (xai, openai, anthropic, stub, ...)."
+              },
+              "model": {
+                "type": "string",
+                "description": "Model identifier as expected by the provider."
+              },
+              "api_base": {
+                "type": "string",
+                "description": "Optional override for the provider API base URL."
+              },
+              "api_key_env": {
+                "type": "string",
+                "description": "Environment variable name holding the API key. Defaults to provider convention."
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "default": 3600,
+                "minimum": 1
+              },
+              "store": {
+                "type": "boolean",
+                "default": false,
+                "description": "Whether to enable provider-side conversation storage (xAI 'store' flag, etc.)."
+              }
+            }
+          }
+        },
+        "autonomy": {
+          "type": "object",
+          "description": "Autonomy and HITL policy. propose-then-confirm is the product default.",
+          "required": ["mode", "auto_allow", "always_gate"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["propose-then-confirm", "full-autonomy"],
+              "description": "Base autonomy mode. propose-then-confirm is the enforced default.",
+              "default": "propose-then-confirm"
+            },
+            "auto_allow": {
+              "type": "array",
+              "description": "Actions that never require approval, even in propose mode.",
+              "items": { "type": "string" },
+              "examples": [["search", "read", "summarize"]]
+            },
+            "always_gate": {
+              "type": "array",
+              "description": "Actions gated through HITL even in full-autonomy mode.",
+              "items": { "type": "string" },
+              "examples": [["send", "post", "purchase", "deploy"]]
+            },
+            "full_autonomy": {
+              "type": "object",
+              "description": "Full-autonomy opt-in. enabled=false by default. Requires a valid guardrails block.",
+              "required": ["enabled"],
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "guardrails": {
+                  "type": "object",
+                  "description": "Hard limits enforced BEFORE provider calls return. All fields required when enabled=true.",
+                  "required": [
+                    "daily_token_limit",
+                    "daily_usd_limit",
+                    "per_task_token_limit",
+                    "max_actions_per_hour",
+                    "allowed_actions",
+                    "kill_switch"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "daily_token_limit": {
+                      "type": "integer",
+                      "description": "Hard daily token cap across all provider calls.",
+                      "minimum": 1
+                    },
+                    "daily_usd_limit": {
+                      "type": "number",
+                      "description": "Hard daily USD spend cap across all providers.",
+                      "minimum": 0
+                    },
+                    "per_task_token_limit": {
+                      "type": "integer",
+                      "description": "Hard per-task token cap.",
+                      "minimum": 1
+                    },
+                    "max_actions_per_hour": {
+                      "type": "integer",
+                      "description": "Rate cap on actions per hour. Prevents runaway loops.",
+                      "minimum": 1
+                    },
+                    "allowed_actions": {
+                      "type": "array",
+                      "description": "Whitelist of actions permitted in full-autonomy mode.",
+                      "items": { "type": "string" }
+                    },
+                    "kill_switch": {
+                      "type": "boolean",
+                      "description": "When true, factory-wide and per-twin pause flags are respected."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

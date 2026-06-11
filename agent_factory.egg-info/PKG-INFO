@@ -1,0 +1,216 @@
+Metadata-Version: 2.4
+Name: agent-factory
+Version: 0.1.0
+Summary: Config-driven runtime and deployment framework for hosting one or more digital twins.
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: httpx>=0.28.0
+Requires-Dist: pydantic>=2.8.0
+Requires-Dist: PyYAML>=6.0.0
+Requires-Dist: uvicorn>=0.30.0
+
+# agent-factory
+
+`agent-factory` is a config-driven runtime for hosting one or more digital twins as installable packages. The framework is public, neutral, and secret-free. Twins bring their own identity, prompts, knowledge, guardrails, model routing, evals, and channel configuration.
+
+## What This Repo Contains
+
+- A FastAPI runtime for chat and agent-facing programmatic access
+- An installer for twin packages
+- A twin import path from either a local folder or a git URL
+- Pluggable model providers, including xAI Responses API support
+- A generic principal-operator twin seed configured for `grok-4.20-0309-reasoning`
+- Supabase-backed persistence support for threads, messages, runs, tasks, events, approvals, corrections, and artifact proposals
+- Supabase-backed machine API client management, admin identity mapping, and audit logging
+- A minimal browser chat UI at `/` and an admin governance UI at `/admin`
+- Test coverage for installability, runtime behavior, auth flows, model selection, import flows, and operational APIs
+
+## Project Layout
+
+```text
+agent-factory/
+├── agent_factory/          # Runtime, config, providers, installer, CLI
+├── twin_seeds/             # Small committed seed scaffolds
+├── twins/                  # Optional generated/imported twin packages
+├── installed_twins/        # Runtime installation target
+├── supabase/               # SQL schema for persistence
+├── tests/                  # Contract and smoke-style tests
+├── Dockerfile              # Cloud Run container
+└── .env.example            # Provider secrets contract
+```
+
+## Quick Start
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+
+agent-factory import-kernel \
+  --source ../agent-kernel \
+  --twin-root twins/imported/my-twin \
+  --seed-root twin_seeds/principal-operator \
+  --twin-id my_twin \
+  --name "My Principal Operator Twin" \
+  --owner "Twin Owner" \
+  --description "A principal-operator digital twin for engineering leadership, strategic planning, and agent-factory design." \
+  --overwrite
+agent-factory install twins/imported/my-twin installed_twins --overwrite
+agent-factory list --registry-root installed_twins
+agent-factory serve --registry-root installed_twins --host 0.0.0.0 --port 8080
+python3 -m unittest discover -s tests -v
+```
+
+If you want persistence in Supabase, apply [supabase/schema.sql](./supabase/schema.sql) and set:
+
+```bash
+export SUPABASE_URL=...
+export SUPABASE_SERVICE_ROLE_KEY=...
+export SUPABASE_JWT_SECRET=...
+export XAI_API_KEY=...
+export AGENT_FACTORY_REQUIRE_AUTH=true
+```
+
+## Source Vs Installed Twins
+
+- `twin_seeds/` is source control. This is where small committed seed scaffolds live.
+- `twins/` is for generated or imported twin packages.
+- `installed_twins/` is generated runtime state. It is filled by the installer and should not be edited by hand.
+
+The preferred pattern is:
+
+1. Keep the framework repo clean and public.
+2. Import a kernel from a local folder or a git URL into `twins/imported/<your-twin>`.
+3. Install that generated twin package into `installed_twins/`.
+
+Examples:
+
+```bash
+agent-factory import-kernel \
+  --source ../agent-kernel \
+  --twin-root twins/imported/my-twin \
+  --seed-root twin_seeds/principal-operator \
+  --twin-id my_twin \
+  --name "My Principal Operator Twin" \
+  --owner "Twin Owner" \
+  --overwrite
+```
+
+```bash
+agent-factory import-kernel \
+  --source https://github.com/fszale/agent-kernel.git \
+  --git-ref main \
+  --twin-root twins/imported/my-twin \
+  --seed-root twin_seeds/principal-operator \
+  --twin-id my_twin \
+  --name "My Principal Operator Twin" \
+  --owner "Twin Owner" \
+  --overwrite
+```
+
+`twins/imported/` is gitignored so imported twins do not need to be committed.
+
+## Runtime Model
+
+Each twin ships a `twin.yaml` manifest with:
+
+- identity and ownership metadata
+- prompt and knowledge locations
+- model profiles per twin
+- guardrails and correction-policy settings
+- channel provisioning, including future voice/avatar hooks
+- eval suite paths
+
+The runtime loads the installed packages, retrieves relevant knowledge snippets, constructs the system prompt, and routes to the selected provider profile.
+
+## API Surface
+
+The runtime now exposes:
+
+- `/` minimal browser chat UI
+- `/admin` minimal admin governance UI
+- `/me`
+- `/twins`, `/twins/{id}`, `/twins/{id}/capabilities`
+- `/threads`, `/threads/{id}`, `/threads/{id}/messages`
+- `/runs`, `/runs/{id}`
+- `/tasks`, `/tasks/{id}`
+- `/events`
+- `/approvals`, `/approvals/{id}/resolve`
+- `/corrections`
+- `/artifacts`
+- `/api-clients`
+- `/admin-identities`
+- `/audit`
+- `/admin/overview`
+
+When `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set, these records persist in Supabase. Otherwise the server falls back to an in-memory store for local development and tests.
+
+## Auth Model
+
+`agent-factory` now supports two auth paths:
+
+- Machine callers: hashed API keys stored in `api_clients`
+- Human admins: Supabase Auth bearer tokens verified with `SUPABASE_JWT_SECRET`, then matched against `admin_identities`
+
+The intended pattern is:
+
+- agent/workflow/factory callers use API keys with scoped permissions
+- human operators and governors use Supabase Auth plus admin identity mapping
+
+Common machine scopes:
+
+- `twin:read`
+- `capability:read`
+- `chat:write`
+- `thread:read`
+- `thread:write`
+- `task:create`
+- `task:read`
+- `event:write`
+- `event:read`
+- `run:read`
+
+Common admin scopes:
+
+- `approval:read`
+- `approval:write`
+- `approval:resolve`
+- `correction:read`
+- `correction:write`
+- `artifact:read`
+- `artifact:write`
+- `client:read`
+- `client:write`
+- `admin:read`
+- `admin:write`
+- `audit:read`
+
+Bootstrap note:
+
+- create a Supabase Auth user first
+- insert that user into `admin_identities` in Supabase
+- then use that bearer token to manage API clients and governance state from `/admin`
+
+## Seed Notes
+
+The committed seed is intentionally generic. Personal identity should be injected at import time with `--twin-id`, `--name`, `--owner`, and `--description`, or edited locally after import.
+
+## xAI Notes
+
+The xAI adapter uses the Responses API. You must provide `XAI_API_KEY` in the deployment environment and ensure the configured model is enabled for your xAI account. The principal-operator seed defaults its deep profile to `grok-4.20-0309-reasoning`.
+
+## Cloud Run
+
+This repo includes a `Dockerfile` that runs the API on port `8080`. A typical deployment flow is:
+
+```bash
+docker build -t agent-factory .
+docker run -p 8080:8080 --env-file .env agent-factory
+```
+
+Cloud Run should mount or bake the desired twin packages, then install them into `installed_twins/` during image build or startup.
+
+## Implementation Plan
+
+The phased implementation roadmap is documented in [docs/future-implementation-plan.md](./docs/future-implementation-plan.md). The current recommendation is to finish local Supabase validation first, then move to Cloud Run deployment, and only then start voice and avatar work.

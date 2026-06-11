@@ -1,0 +1,2 @@
+[console_scripts]
+agent-factory = agent_factory.cli:main

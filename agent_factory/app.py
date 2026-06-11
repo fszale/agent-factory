@@ -7,7 +7,19 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+import os
+
 from agent_factory.auth import AuthService, Principal, generate_api_key
+from agent_factory.autonomy import BudgetMeter
+from agent_factory.cloud import LocalScheduler
+from agent_factory.improvement import DryRunPRPublisher, reflect_and_propose
+from agent_factory.mcp import MCPServer
+from agent_factory.tools import ToolContext
+from agent_factory.metrics_service import (
+    compute_mean_usefulness,
+    compute_ops_metrics,
+    roi_curve,
+)
 from agent_factory.persistence import PersistenceStore, build_store_from_env
 from agent_factory.providers.base import ModelProvider
 from agent_factory.registry import TwinRegistry
@@ -119,6 +131,19 @@ def create_app(
     app.state.runtime = runtime
     app.state.store = store
     app.state.auth = auth
+
+    # Peer-capable MCP server (shares the runtime's budget meter + kill switch).
+    tool_ctx = ToolContext(
+        runtime=runtime,
+        store=store,
+        scheduler=LocalScheduler(),
+        budget=runtime.budget,
+    )
+    mcp_server = MCPServer(
+        tool_ctx,
+        signing_secret=os.getenv("MCP_SIGNING_SECRET", "dev-mcp-secret"),
+    )
+    app.state.mcp = mcp_server
 
     def _principal(request: Request) -> Principal:
         return auth.authenticate_request(request)
@@ -616,6 +641,58 @@ def create_app(
     def list_audit(request: Request, twin_id: str | None = None, actor_type: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         _authorize(request, scopes=["audit:read"], twin_id=twin_id, admin_only=True)
         return store.list_audit_events(twin_id=twin_id, actor_type=actor_type, limit=limit)
+
+    # ------------------------------------------------------------------ #
+    # Phase 2: dashboard v1 — HITL queue, metrics, improvement loop.
+    # ------------------------------------------------------------------ #
+    @app.get("/dashboard/hitl-queue")
+    def hitl_queue(request: Request, twin_id: str | None = None) -> list[dict[str, Any]]:
+        _authorize(request, scopes=["approval:read"], twin_id=twin_id, admin_only=True)
+        return store.list_approvals(twin_id=twin_id, status="pending")
+
+    @app.get("/metrics/ops")
+    def metrics_ops(request: Request, twin_id: str | None = None) -> dict[str, Any]:
+        _authorize(request, scopes=["admin:read"], twin_id=twin_id, admin_only=True)
+        data = compute_ops_metrics(store, twin_id=twin_id)
+        data["mean_usefulness"] = compute_mean_usefulness(store, twin_id=twin_id)
+        return data
+
+    @app.get("/metrics/roi")
+    def metrics_roi(request: Request, twin_id: str | None = None) -> dict[str, Any]:
+        _authorize(request, scopes=["admin:read"], twin_id=twin_id, admin_only=True)
+        return {"twin_id": twin_id, "curve": roi_curve(store, twin_id=twin_id)}
+
+    @app.get("/improvements")
+    def list_improvements(request: Request, twin_id: str | None = None, status: str | None = None) -> dict[str, Any]:
+        _authorize(request, scopes=["artifact:read"], twin_id=twin_id, admin_only=True)
+        return {
+            "candidates": store.list_improvement_candidates(twin_id=twin_id, status=status),
+            "events": store.list_improvement_events(twin_id=twin_id),
+        }
+
+    @app.post("/improvements/reflect")
+    def run_reflect(request: Request, twin_id: str) -> dict[str, Any]:
+        principal = _authorize(request, scopes=["artifact:write"], twin_id=twin_id, admin_only=True)
+        try:
+            twin = registry.get(twin_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        publisher = DryRunPRPublisher(Path(registry.root) / ".improvements")
+        result = reflect_and_propose(twin, store, publisher)
+        _audit(principal, "improvement.reflect", "twin", target_id=twin_id, twin_id=twin_id,
+               payload={"candidates": len(result.candidates)})
+        return {
+            "twin_id": twin_id,
+            "scored_traces": result.scored_traces,
+            "candidates": result.candidates,
+            "published": result.published,
+        }
+
+    @app.post("/mcp")
+    def mcp_endpoint(request: Request, body: dict[str, Any]) -> dict[str, Any]:
+        # Peer/agent JSON-RPC entry point. Delegation is signed + policy-gated inside.
+        _authorize(request, scopes=["task:create"])
+        return mcp_server.handle(body)
 
     @app.get("/admin/overview")
     def admin_overview(request: Request, twin_id: str | None = None) -> dict[str, Any]:
