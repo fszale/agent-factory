@@ -5,12 +5,6 @@ imports digital-twin specs from git, installs them as servable agents, runs them
 through threaded conversations, and gates risky actions through an HITL approval
 queue. Ships with a React admin dashboard so operators can actually drive it.
 
-> **Build your own twin factory — [solidcage.com](https://solidcage.com)**
->
-> Filip Szalewicz uses this stack with manufacturing and engineering clients to
-> turn role specs into governed AI employees in 2–6 weeks.
-> [Book a working session →](https://cal.com/filip-szalewicz-wl6x3a/30min)
-
 ---
 
 ## Architecture overview
