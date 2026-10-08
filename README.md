@@ -150,6 +150,12 @@ parses these into a `FactoryApiError` with a stable `code` string
 
 ---
 
+## Want help building one?
+
+I set this stack up with engineering teams through Solid Cage. [Book a working session](https://cal.com/filip-szalewicz-wl6x3a/30min) or see [solidcage.com](https://www.solidcage.com).
+
+---
+
 ## License
 
 MIT.
